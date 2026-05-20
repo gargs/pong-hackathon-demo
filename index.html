@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Pong</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -14,22 +14,32 @@
       justify-content: center;
       min-height: 100vh;
       font-family: monospace;
+      padding: 12px;
     }
     canvas {
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 4px;
+      width: 100%;
+      max-width: min(800px, calc(80vh * 4 / 3));
+      height: auto;
+      aspect-ratio: 4 / 3;
+      touch-action: none;   /* don't scroll/zoom on touch over the canvas */
+      display: block;
     }
     #controls {
       margin-top: 16px;
       color: rgba(255,255,255,0.4);
       font-size: 13px;
       letter-spacing: 0.05em;
+      text-align: center;
     }
     #difficulty {
       margin-top: 12px;
       display: flex;
       gap: 6px;
       align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
       color: rgba(255,255,255,0.4);
       font-size: 13px;
       letter-spacing: 0.05em;

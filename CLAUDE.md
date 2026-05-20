@@ -1,58 +1,86 @@
 # Pong Hackathon
 
-Welcome! Today you're going to build an AI opponent for a Pong game — entirely in your browser, no installation needed.
+Started as a hackathon challenge: a single-file Pong where the AI paddle did
+nothing. The AI has since been built out into a human-like opponent across
+~14 atomic commits. `git log --oneline` reads as a design diary.
 
-## How the game works
+## How the game runs
 
-Everything lives in one file: `index.html`. Open it in your browser and you'll see a working Pong game. You (left paddle) vs. an AI opponent (right paddle) — except the AI doesn't move yet. That's your job.
+Open `index.html` in a browser. No build step, no server, no dependencies.
 
-To play the game while developing: just open `index.html` in your browser. Every time you save a change, refresh the page to see it.
+- Left paddle: you (W/S or ↑/↓)
+- Right paddle: AI
+- Space: start round / continue
+- First to 7 wins
 
-## The code
+Difficulty selector (Easy / Medium / Hard) sits below the canvas.
 
-The file is structured in sections, each clearly labelled with a comment. Here's the map:
+## File map
+
+Everything lives in `index.html`. Sections are marked with `// ─── HEADER ───`:
 
 | Section | What it does |
-|---------|-------------|
-| CONSTANTS | Numbers that control speed, size, score limit — easy to tweak |
-| SETUP | Creates the canvas the game draws on |
-| GAME STATE | Variables that track where everything is right now |
-| INPUT | Listens for keyboard presses |
-| ROUND / GAME MANAGEMENT | Starts and resets rounds |
-| PLAYER MOVEMENT | Moves your paddle based on keys held |
-| BALL PHYSICS | Moves the ball, handles bouncing and scoring |
-| **AI MOVEMENT** | **← This is your challenge** |
-| DRAWING | Renders everything on screen each frame |
-| GAME LOOP | Runs the above ~60 times per second |
+|---------|--------------|
+| CONSTANTS | Speed, size, score limit |
+| SETUP | Canvas init |
+| GAME STATE | Position / velocity vars |
+| AI DIFFICULTY | Selector state and listeners |
+| AUDIO | Web Audio tone helpers (`blip`, `chirp`) |
+| INPUT | Keyboard handlers |
+| ROUND / GAME MANAGEMENT | Round start / reset |
+| PLAYER MOVEMENT | Reads keys, moves left paddle |
+| BALL PHYSICS | Movement, wall and paddle bounces, scoring |
+| **AI MOVEMENT** | `getAiMove` — the substantial bit |
+| DRAWING | Canvas rendering |
+| GAME LOOP | `requestAnimationFrame` driver |
 
-## Your challenge
+## AI architecture
 
-Find the `getAiMove` function in the **AI MOVEMENT** section. It currently returns `0` (do nothing). Make it return `-1` (move up) or `1` (move down) based on where the ball is.
+Four stacked layers of human-like imperfection. The detailed architecture
+comment lives directly above `getAiMove` in `index.html` — read that for the
+full picture. Summary:
 
-The function receives a `gameState` object — everything you need to know is in there. The comments above the function explain exactly what each property means.
+1. **Perception** — reaction-delayed ball state via a ring buffer
+2. **Prediction** — linear extrapolation to landing-y (incoming) or contact-y
+   (anticipation). No wall-bounce modelling — out-of-bounds landings clamped.
+3. **Skill profile** — per-rally variance (`SKILL_LAPSE` / `SKILL_DEFAULT` /
+   `SKILL_SHARP`). `DIFFICULTY_DISTRIBUTIONS` controls the mix per level.
+4. **Motor** — direction-switch stutter and stop-overshoots.
 
-### Suggested progression
+The skill profile is the dominant source of variation. Each rally samples a
+profile and inherits its reaction lag, noise, persistent y-bias, etc., for
+the whole rally. Difficulty changes the *mix*, not the underlying parameters
+— Hard plays more sharp rallies and fewer lapses; Easy is the opposite.
 
-1. **Get it moving** — make the AI follow the ball. Even a basic version is satisfying.
-2. **Make it beatable** — a perfect AI isn't fun. Add some delay or limit how fast it reacts.
-3. **Stretch goals** — pick any of these, in any order:
-   - Add a difficulty selector (Easy / Medium / Hard) that changes how good the AI is
-   - Make the ball speed up gradually over a long rally
-   - Change the colours or add a glow effect to the ball
-   - Add sound effects (ask Claude about the Web Audio API)
-   - Make the AI predict where the ball will land instead of just following it
+## Known limitations
+
+- **Frame-rate dependence.** All movement and all AI timing is in
+  pixels-per-frame / frames-of-delay, tuned at ~60 fps. On 120/144 Hz
+  displays the game runs proportionally faster and the AI's reaction-lag
+  values map to shorter wall-clock times. Fix would require a `dt`-based
+  loop and re-tuning every reaction-frame count in the skill profiles.
+- **No wall-bounce prediction.** `predictLandingY` is linear; landings
+  outside `[0, H]` are clamped instead of reflected. Sharp vertical returns
+  exploit this — useful exploit for human players, intentional handicap on
+  the AI.
+
+## Common ways to extend
+
+- **Visual polish.** Ball trail, glow, paddle hit-flash, particle puff on
+  scoring. All in the DRAWING section.
+- **Wall-bounce predictor.** Extend `predictLandingY` to fold reflections
+  off the top/bottom walls into the landing-y estimate. Removes the
+  vertical-return exploit.
+- **Player-tendency learning.** Running histogram of where the player tends
+  to return the ball; bias the anticipation phase toward those zones.
+- **Rally speedup.** Existing 1.04× per-hit could be steeper or staged.
+- **Frame-rate independence.** See limitations above.
 
 ## Working with Claude
 
-Just describe what you want in plain English. For example:
-
-- *"Make the AI follow the ball, but with a small delay so it's not perfect"*
-- *"Add a way to choose difficulty before the game starts"*
-- *"Why does the ball sometimes go through the paddle?"*
-
-Claude will explain what it's doing as it goes — ask questions freely, there are no stupid ones.
-
-If something breaks, paste the error from the browser console (press F12 → Console tab) and ask Claude what it means.
+Describe what you want in plain English. Paste browser-console errors (F12)
+directly. The commit history is rich — `git log --oneline -20` is a fast way
+to see what's been tried.
 
 ## Running Claude
 

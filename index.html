@@ -319,15 +319,20 @@
     // finger on it and the paddle Y follows proportionally.
 
     const touchpad = document.getElementById('touchpad');
-    function applyPadTouch(touch) {
-      const rect = touchpad.getBoundingClientRect();
-      const t = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
-      player.y = t * (H - PADDLE_H);
-    }
+    let padAnchor = null;   // {touchY, paddleY} anchored at touchstart
+
     function advancePhaseIfWaiting() {
       if (phase === 'waiting') startRound();
       else if (phase === 'over') resetGame();
     }
+    function applyPadDelta(touch) {
+      if (!padAnchor) return;
+      const rect = touchpad.getBoundingClientRect();
+      const scale = (H - PADDLE_H) / rect.height;   // full pad drag = full paddle range
+      const newY  = padAnchor.paddleY + (touch.clientY - padAnchor.touchY) * scale;
+      player.y = Math.max(0, Math.min(H - PADDLE_H, newY));
+    }
+
     canvas.addEventListener('touchstart', e => {
       e.preventDefault();
       unlockAudio();
@@ -337,12 +342,16 @@
       e.preventDefault();
       unlockAudio();
       advancePhaseIfWaiting();
-      if (e.touches.length > 0) applyPadTouch(e.touches[0]);
+      if (e.touches.length > 0) {
+        padAnchor = { touchY: e.touches[0].clientY, paddleY: player.y };
+      }
     }, { passive: false });
     touchpad.addEventListener('touchmove', e => {
       e.preventDefault();
-      if (e.touches.length > 0) applyPadTouch(e.touches[0]);
+      if (e.touches.length > 0) applyPadDelta(e.touches[0]);
     }, { passive: false });
+    touchpad.addEventListener('touchend',    () => { padAnchor = null; }, { passive: true });
+    touchpad.addEventListener('touchcancel', () => { padAnchor = null; }, { passive: true });
 
     // ─────────────────────────────────────────────────────────────────────────
     // ROUND / GAME MANAGEMENT

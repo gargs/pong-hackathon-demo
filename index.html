@@ -205,13 +205,14 @@
       // initial read followed by frequent micro-reads whose noise decays as
       // the ball approaches the AI's side.
 
-      const REACTION_FRAMES   = 8;      // ~130ms — alert human reaction
-      const ARRIVE_TOLERANCE  = 6;
-      const REREAD_EVERY      = 6;      // re-evaluate every ~100ms during flight
-      const REPLAN_THRESHOLD  = 14;     // only commit to a new target if estimate moved meaningfully
-      const READ_NOISE_START  = 32;     // estimate error right after the opponent hits
-      const READ_NOISE_END    = 4;      // estimate error when the ball is about to arrive
-      const TELEPORT_PX       = 50;     // detect round resets
+      const REACTION_FRAMES     = 8;    // ~130ms — alert human reaction
+      const ARRIVE_TOLERANCE    = 6;
+      const REREAD_EVERY        = 6;    // re-evaluate every ~100ms during flight or recovery
+      const REPLAN_THRESHOLD    = 14;   // only commit to a new target if estimate moved meaningfully
+      const READ_NOISE_START    = 32;   // estimate error right after the opponent hits
+      const READ_NOISE_END      = 4;    // estimate error when the ball is about to arrive
+      const ANTICIPATE_NOISE    = 22;   // uncertainty when guessing the opponent's return
+      const TELEPORT_PX         = 50;   // detect round resets
 
       const ballHistory       = [];
       let   prevVx            = 0;
@@ -279,9 +280,28 @@
               }
             }
           }
-        } else if (perceived.vx < 0 && phase !== 'rest') {
-          targetY = H / 2;
-          phase = 'rest';
+        } else if (perceived.vx < 0) {
+          // Ball heading toward the player — anticipate the return.
+          // Shadow the predicted contact y, which is roughly where a centered
+          // return will come back to. Refines as the ball nears the player.
+          if (phase !== 'rest') {
+            phase = 'rest';
+            rereadCounter = 0;
+          }
+          rereadCounter++;
+          if (rereadCounter >= REREAD_EVERY) {
+            rereadCounter = 0;
+            const playerX = 20 + PADDLE_W;
+            let candidate = H / 2;
+            if (perceived.x > playerX) {
+              const t = (playerX - perceived.x) / perceived.vx;
+              const predictedContactY = perceived.y + perceived.vy * t;
+              candidate = noisyTarget(predictedContactY, ANTICIPATE_NOISE, paddleH, H);
+            }
+            if (targetY === null || Math.abs(candidate - targetY) > REPLAN_THRESHOLD) {
+              targetY = candidate;
+            }
+          }
         }
 
         prevVx = perceived.vx;

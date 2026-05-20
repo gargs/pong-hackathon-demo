@@ -200,7 +200,9 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     function getAiMove(gameState) {
-      // TODO: make the AI actually play!
+      const paddleCenter = gameState.ai.y + gameState.paddleHeight / 2;
+      if (gameState.ball.y < paddleCenter) return -1;
+      if (gameState.ball.y > paddleCenter) return  1;
       return 0;
     }
 

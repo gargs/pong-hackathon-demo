@@ -200,9 +200,11 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     function getAiMove(gameState) {
+      const AI_DEADZONE  = 8;
       const paddleCenter = gameState.ai.y + gameState.paddleHeight / 2;
-      if (gameState.ball.y < paddleCenter) return -1;
-      if (gameState.ball.y > paddleCenter) return  1;
+      const delta        = gameState.ball.y - paddleCenter;
+      if (delta < -AI_DEADZONE) return -1;
+      if (delta >  AI_DEADZONE) return  1;
       return 0;
     }
 

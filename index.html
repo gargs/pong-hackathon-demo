@@ -63,6 +63,38 @@
       color: white;
       border-color: rgba(255,255,255,0.5);
     }
+    #game-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #game-actions button {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.2);
+      color: rgba(255,255,255,0.6);
+      padding: 4px 12px;
+      cursor: pointer;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      min-width: 80px;
+    }
+    #game-actions button:hover:not(:disabled) {
+      border-color: rgba(255,255,255,0.5);
+    }
+    #game-actions button.active {
+      background: rgba(255,255,255,0.1);
+      color: white;
+      border-color: rgba(255,255,255,0.5);
+    }
+    #game-actions button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -73,6 +105,10 @@
     <button data-level="easy">Easy</button>
     <button data-level="medium" class="active">Medium</button>
     <button data-level="hard">Hard</button>
+  </div>
+  <div id="game-actions">
+    <button id="pauseBtn">Pause</button>
+    <button id="muteBtn">Mute</button>
   </div>
 
   <script>
@@ -208,6 +244,34 @@
         `W / S or ↑ / ↓ move &nbsp;·&nbsp; Space start &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M ${muted ? '<strong>unmute</strong>' : 'mute'}`;
     }
 
+    function togglePause() {
+      if (phase === 'playing')     phase = 'paused';
+      else if (phase === 'paused') phase = 'playing';
+      refreshGameActionButtons();
+    }
+    function toggleMute() {
+      muted = !muted;
+      refreshControlsLabel();
+      refreshGameActionButtons();
+    }
+    function refreshGameActionButtons() {
+      const pauseBtn = document.getElementById('pauseBtn');
+      const muteBtn  = document.getElementById('muteBtn');
+      pauseBtn.textContent = phase === 'paused' ? 'Resume' : 'Pause';
+      pauseBtn.classList.toggle('active', phase === 'paused');
+      pauseBtn.disabled    = !(phase === 'playing' || phase === 'paused');
+      muteBtn.textContent  = muted ? 'Unmute' : 'Mute';
+      muteBtn.classList.toggle('active', muted);
+    }
+    document.getElementById('pauseBtn').addEventListener('click', e => {
+      togglePause();
+      e.currentTarget.blur();
+    });
+    document.getElementById('muteBtn').addEventListener('click', e => {
+      toggleMute();
+      e.currentTarget.blur();
+    });
+
     document.addEventListener('keydown', e => {
       unlockAudio();   // safe to call on every keypress; only does work once
       keys[e.key] = true;
@@ -215,14 +279,8 @@
         if (phase === 'waiting') startRound();
         if (phase === 'over')    resetGame();
       }
-      if (e.key === 'p' || e.key === 'P') {
-        if (phase === 'playing') phase = 'paused';
-        else if (phase === 'paused') phase = 'playing';
-      }
-      if (e.key === 'm' || e.key === 'M') {
-        muted = !muted;
-        refreshControlsLabel();
-      }
+      if (e.key === 'p' || e.key === 'P') togglePause();
+      if (e.key === 'm' || e.key === 'M') toggleMute();
     });
     document.addEventListener('keyup', e => { keys[e.key] = false; });
     // Safari is happiest unlocking audio on an actual pointer event, not
@@ -625,6 +683,7 @@
 
     function draw() {
       const now = performance.now();
+      refreshGameActionButtons();   // keep pause/mute button labels in sync with phase
 
       // Background
       ctx.fillStyle = '#1a1a2e';

@@ -214,6 +214,9 @@
       const ANTICIPATE_NOISE       = 30;   // uncertainty when guessing the opponent's return
       const ANTICIPATE_COMMITMENT  = 0.4;  // 0 = stay at centre, 1 = fully commit to prediction
       const TELEPORT_PX         = 50;   // detect round resets
+      const DIR_SWITCH_FRAMES   = [3, 4, 5];   // ~50-85ms pause when reversing direction
+      const OVERSHOOT_CHANCE    = 0.20; // probability of holding one extra frame past target
+      const OVERSHOOT_FRAMES    = [1, 2];      // how long we overshoot when it happens
 
       const ballHistory       = [];
       let   prevVx            = 0;
@@ -221,6 +224,9 @@
       let   phase             = 'rest'; // 'rest' | 'flying'
       let   targetY           = null;
       let   rereadCounter     = 0;
+      let   lastDir           = 0;     // direction returned last frame, for motor modelling
+      let   stutterRemaining  = 0;     // frames left in a direction-switch pause
+      let   overshootRemaining = 0;    // frames left of holding past the target
 
       function predictLandingY(b, aiX) {
         if (b.vx <= 0) return null;
@@ -309,10 +315,35 @@
         prevVx = perceived.vx;
         prevPerceivedX = perceived.x;
 
-        if (targetY === null) return 0;
-        const delta = targetY - paddleCenter;
-        if (Math.abs(delta) <= ARRIVE_TOLERANCE) return 0;
-        return delta < 0 ? -1 : 1;
+        // Pick the direction we'd ideally press this frame
+        let desiredDir = 0;
+        if (targetY !== null) {
+          const delta = targetY - paddleCenter;
+          if (Math.abs(delta) > ARRIVE_TOLERANCE) desiredDir = delta < 0 ? -1 : 1;
+        }
+
+        // Motor modelling: humans can't switch keys instantly, and they often
+        // hold a press a frame or two past the optimal stop point.
+        if (stutterRemaining > 0) {
+          stutterRemaining--;
+          return 0;
+        }
+        if (overshootRemaining > 0) {
+          overshootRemaining--;
+          return lastDir;
+        }
+        if (lastDir !== 0 && desiredDir === 0 && Math.random() < OVERSHOOT_CHANCE) {
+          overshootRemaining = OVERSHOOT_FRAMES[Math.floor(Math.random() * OVERSHOOT_FRAMES.length)];
+          return lastDir;
+        }
+        if (lastDir !== 0 && desiredDir !== 0 && desiredDir !== lastDir) {
+          stutterRemaining = DIR_SWITCH_FRAMES[Math.floor(Math.random() * DIR_SWITCH_FRAMES.length)];
+          lastDir = 0;
+          return 0;
+        }
+
+        lastDir = desiredDir;
+        return desiredDir;
       };
     })();
 

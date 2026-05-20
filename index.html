@@ -57,7 +57,7 @@
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
-  <div id="controls">W / S or ↑ / ↓ to move &nbsp;·&nbsp; Space to start</div>
+  <div id="controls">W / S or ↑ / ↓ move &nbsp;·&nbsp; Space start &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M mute</div>
   <div id="difficulty">
     Difficulty
     <button data-level="easy">Easy</button>
@@ -99,7 +99,8 @@
     let ai     = { y: H / 2 - PADDLE_H / 2 };   // top-left y of AI paddle
     let score  = { player: 0, ai: 0 };
     let keys   = {};                              // which keys are currently held
-    let phase  = 'waiting';                       // 'waiting' | 'playing' | 'over'
+    let phase  = 'waiting';                       // 'waiting' | 'playing' | 'paused' | 'over'
+    let muted  = false;
 
     // ─────────────────────────────────────────────────────────────────────────
     // AI DIFFICULTY
@@ -137,6 +138,7 @@
       return audioCtx;
     }
     function blip(freq, duration = 0.06, type = 'square', volume = 0.12) {
+      if (muted) return;
       const ctx = getAudio();
       if (!ctx) return;
       const t0 = ctx.currentTime;
@@ -152,6 +154,7 @@
       osc.stop(t0 + duration);
     }
     function chirp(startFreq, endFreq, duration = 0.22, volume = 0.16) {
+      if (muted) return;
       const ctx = getAudio();
       if (!ctx) return;
       const t0 = ctx.currentTime;
@@ -172,12 +175,25 @@
     // INPUT
     // ─────────────────────────────────────────────────────────────────────────
 
+    function refreshControlsLabel() {
+      document.getElementById('controls').innerHTML =
+        `W / S or ↑ / ↓ move &nbsp;·&nbsp; Space start &nbsp;·&nbsp; P pause &nbsp;·&nbsp; M ${muted ? '<strong>unmute</strong>' : 'mute'}`;
+    }
+
     document.addEventListener('keydown', e => {
       getAudio();   // resume audio on the first user gesture
       keys[e.key] = true;
       if (e.key === ' ' || e.key === 'Enter') {
         if (phase === 'waiting') startRound();
         if (phase === 'over')    resetGame();
+      }
+      if (e.key === 'p' || e.key === 'P') {
+        if (phase === 'playing') phase = 'paused';
+        else if (phase === 'paused') phase = 'playing';
+      }
+      if (e.key === 'm' || e.key === 'M') {
+        muted = !muted;
+        refreshControlsLabel();
       }
     });
     document.addEventListener('keyup', e => { keys[e.key] = false; });
@@ -595,6 +611,9 @@
       if (phase === 'waiting') {
         const isStart = score.player === 0 && score.ai === 0;
         drawOverlay(isStart ? 'PONG' : 'Point over', 'Press Space to continue');
+      }
+      if (phase === 'paused') {
+        drawOverlay('Paused', 'Press P to continue');
       }
       if (phase === 'over') {
         const won = score.player >= WINNING_SCORE;

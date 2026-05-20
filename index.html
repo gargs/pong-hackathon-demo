@@ -6,6 +6,7 @@
   <title>Pong</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; }      /* mobile: page itself never scrolls */
     body {
       background: #0d0d1a;
       display: flex;
@@ -95,6 +96,26 @@
       opacity: 0.3;
       cursor: not-allowed;
     }
+    #touchpad {
+      display: none;                       /* shown only on touch devices */
+      margin-top: 12px;
+      width: 100%;
+      max-width: 360px;
+      height: clamp(90px, 18vh, 160px);
+      border: 1px dashed rgba(255,255,255,0.25);
+      background: rgba(255,255,255,0.03);
+      border-radius: 6px;
+      color: rgba(255,255,255,0.35);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      user-select: none;
+    }
+    @media (pointer: coarse) {
+      #touchpad { display: flex; }
+    }
   </style>
 </head>
 <body>
@@ -110,6 +131,7 @@
     <button id="pauseBtn">Pause</button>
     <button id="muteBtn">Mute</button>
   </div>
+  <div id="touchpad">DRAG TO MOVE</div>
 
   <script>
     // ─────────────────────────────────────────────────────────────────────────
@@ -287,26 +309,39 @@
     // just keydown. Listen on the document so any click on the page works.
     document.addEventListener('pointerdown', unlockAudio, { passive: true });
 
-    // Touch input — drag anywhere on the canvas to move the paddle, tap to
-    // start a round or play again. Coordinates are translated from CSS-
-    // pixels to the canvas's internal 800x600 space.
-    function applyTouch(touch) {
-      const rect = canvas.getBoundingClientRect();
-      const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
-      player.y = Math.max(0, Math.min(H - PADDLE_H, y - PADDLE_H / 2));
+    // Touch input.
+    //
+    // The canvas itself is for *viewing*: tapping it advances the phase
+    // (start round, play again) but never moves the paddle, since a finger
+    // on the play field obscures the opponent's side.
+    //
+    // The #touchpad below the canvas is the *playing surface*: drag your
+    // finger on it and the paddle Y follows proportionally.
+
+    const touchpad = document.getElementById('touchpad');
+    function applyPadTouch(touch) {
+      const rect = touchpad.getBoundingClientRect();
+      const t = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+      player.y = t * (H - PADDLE_H);
+    }
+    function advancePhaseIfWaiting() {
+      if (phase === 'waiting') startRound();
+      else if (phase === 'over') resetGame();
     }
     canvas.addEventListener('touchstart', e => {
       e.preventDefault();
       unlockAudio();
-      if (e.touches.length === 0) return;
-      if (phase === 'waiting') startRound();
-      else if (phase === 'over') resetGame();
-      applyTouch(e.touches[0]);
+      advancePhaseIfWaiting();
     }, { passive: false });
-    canvas.addEventListener('touchmove', e => {
+    touchpad.addEventListener('touchstart', e => {
       e.preventDefault();
-      if (e.touches.length === 0) return;
-      applyTouch(e.touches[0]);
+      unlockAudio();
+      advancePhaseIfWaiting();
+      if (e.touches.length > 0) applyPadTouch(e.touches[0]);
+    }, { passive: false });
+    touchpad.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (e.touches.length > 0) applyPadTouch(e.touches[0]);
     }, { passive: false });
 
     // ─────────────────────────────────────────────────────────────────────────

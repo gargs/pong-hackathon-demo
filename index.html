@@ -102,6 +102,15 @@
     let phase  = 'waiting';                       // 'waiting' | 'playing' | 'paused' | 'over'
     let muted  = false;
 
+    // Visual-polish state (timestamps in ms; 0 = no flash active)
+    let playerHitFlashUntil   = 0;
+    let aiHitFlashUntil       = 0;
+    let leftScoreFlashUntil   = 0;   // AI scored — flash the left (player's) side
+    let rightScoreFlashUntil  = 0;   // player scored — flash the right (AI's) side
+    const HIT_FLASH_MS   = 80;
+    const SCORE_FLASH_MS = 250;
+    const reduceMotion   = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
     // ─────────────────────────────────────────────────────────────────────────
     // AI DIFFICULTY
     // The AI already has a per-rally skill model (lapse / default / sharp).
@@ -266,6 +275,7 @@
         ball.vx = Math.abs(ball.vx) * 1.04;            // small speed increase each hit
         ball.vy = ((ball.y - (player.y + PADDLE_H / 2)) / (PADDLE_H / 2)) * 6;
         blip(660);
+        playerHitFlashUntil = performance.now() + HIT_FLASH_MS;
       }
 
       // AI paddle is on the right at x = W - 20 - PADDLE_W
@@ -279,17 +289,20 @@
         ball.vx = -Math.abs(ball.vx) * 1.04;
         ball.vy = ((ball.y - (ai.y + PADDLE_H / 2)) / (PADDLE_H / 2)) * 6;
         blip(440);
+        aiHitFlashUntil = performance.now() + HIT_FLASH_MS;
       }
 
       // Ball left the screen — award a point
       if (ball.x < -BALL_R) {
         score.ai++;
         chirp(440, 220);
+        leftScoreFlashUntil = performance.now() + SCORE_FLASH_MS;
         phase = score.ai >= WINNING_SCORE ? 'over' : 'waiting';
       }
       if (ball.x > W + BALL_R) {
         score.player++;
         chirp(440, 880);
+        rightScoreFlashUntil = performance.now() + SCORE_FLASH_MS;
         phase = score.player >= WINNING_SCORE ? 'over' : 'waiting';
       }
     }
@@ -567,9 +580,25 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     function draw() {
+      const now = performance.now();
+
       // Background
       ctx.fillStyle = '#1a1a2e';
       ctx.fillRect(0, 0, W, H);
+
+      // Score-side flashes (subtle, single-shot per point; respects prefers-reduced-motion)
+      if (!reduceMotion) {
+        if (now < leftScoreFlashUntil) {
+          const a = 0.22 * ((leftScoreFlashUntil - now) / SCORE_FLASH_MS);
+          ctx.fillStyle = `rgba(220, 140, 80, ${a})`;
+          ctx.fillRect(0, 0, W / 2, H);
+        }
+        if (now < rightScoreFlashUntil) {
+          const a = 0.22 * ((rightScoreFlashUntil - now) / SCORE_FLASH_MS);
+          ctx.fillStyle = `rgba(120, 220, 180, ${a})`;
+          ctx.fillRect(W / 2, 0, W / 2, H);
+        }
+      }
 
       // Centre dashed line
       ctx.save();
@@ -589,14 +618,14 @@
       ctx.fillText(score.player, W / 2 - 90, 70);
       ctx.fillText(score.ai,     W / 2 + 90, 70);
 
-      // Player paddle (left)
-      ctx.fillStyle = '#e0e0e0';
+      // Player paddle (left) — brighter for ~80ms after a hit
+      ctx.fillStyle = (!reduceMotion && now < playerHitFlashUntil) ? '#ffffff' : '#e0e0e0';
       ctx.beginPath();
       ctx.roundRect(20, player.y, PADDLE_W, PADDLE_H, 3);
       ctx.fill();
 
-      // AI paddle (right)
-      ctx.fillStyle = '#e0e0e0';
+      // AI paddle (right) — brighter for ~80ms after a hit
+      ctx.fillStyle = (!reduceMotion && now < aiHitFlashUntil) ? '#ffffff' : '#e0e0e0';
       ctx.beginPath();
       ctx.roundRect(W - 20 - PADDLE_W, ai.y, PADDLE_W, PADDLE_H, 3);
       ctx.fill();

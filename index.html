@@ -279,39 +279,58 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // AI MOVEMENT  ←  THIS IS YOUR CHALLENGE
+    // AI MOVEMENT
     // ─────────────────────────────────────────────────────────────────────────
     //
-    // getAiMove() is called every frame while the game is running.
-    // It receives a snapshot of the game state and must return:
+    // getAiMove() is called every frame and returns:
+    //   -1 → move up, 0 → stay, 1 → move down.
     //
-    //   -1  →  move the AI paddle UP
-    //    0  →  keep the AI paddle still
-    //    1  →  move the AI paddle DOWN
-    //
-    // Right now it always returns 0, so the AI never moves and loses every point.
-    //
-    // The gameState object contains:
-    //
-    //   gameState.ball.x        — horizontal position of the ball (0 = left edge)
-    //   gameState.ball.y        — vertical position of the ball (0 = top edge)
-    //   gameState.ball.vx       — horizontal speed (positive = moving right)
-    //   gameState.ball.vy       — vertical speed (positive = moving down)
-    //   gameState.ai.y          — top edge of the AI paddle
-    //   gameState.player.y      — top edge of the player paddle
-    //   gameState.paddleHeight  — height of a paddle in pixels (80)
-    //   gameState.canvasWidth   — canvas width in pixels (800)
-    //   gameState.canvasHeight  — canvas height in pixels (600)
-    //
-    // Tip: the centre of the AI paddle is at:  gameState.ai.y + gameState.paddleHeight / 2
+    // It receives a gameState snapshot:
+    //   ball.x / ball.y / ball.vx / ball.vy    — position and velocity
+    //   ai.y / player.y                        — paddle top edges
+    //   paddleHeight, canvasWidth, canvasHeight
     //
     // ─────────────────────────────────────────────────────────────────────────
+    //
+    // AI ARCHITECTURE — four stacked layers of human-like imperfection.
+    //
+    //   1. PERCEPTION
+    //      ballHistory ring buffer. We plan against the ball as it was
+    //      `rallyProfile.reactionFrames` frames ago, not as it is now.
+    //
+    //   2. PREDICTION
+    //      predictLandingY(): linear extrapolation to estimate landing-y at
+    //      the AI's x (incoming) or contact-y at the player's x (outgoing
+    //      / anticipation). No wall-bounce modelling — out-of-bounds
+    //      landings are clamped (a small handicap on sharp vertical shots).
+    //
+    //   3. SKILL PROFILE — the dominant source of variance.
+    //      At the start of each rally sampleSkill() picks one of:
+    //        SKILL_LAPSE (sluggish, big persistent y-bias)
+    //        SKILL_DEFAULT (peer-level)
+    //        SKILL_SHARP (fast, accurate, rare flash of brilliance)
+    //      The profile drives reaction lag, noise multiplier, persistent
+    //      whole-rally y-bias, anticipation commitment, switch-stutter
+    //      frames, and overshoot probability. DIFFICULTY_DISTRIBUTIONS
+    //      controls the mix per difficulty.
+    //
+    //   4. MOTOR
+    //      Humans can't reverse direction instantly and often hold a press
+    //      a frame or two past optimal. stutterRemaining (pause on
+    //      direction change) and overshootRemaining (extra frames on stop)
+    //      model this.
+    //
+    // Main tuning knobs:
+    //   DIFFICULTY_DISTRIBUTIONS     — overall feel per difficulty level
+    //   SKILL_*.reactionFrames       — perceived ball lag
+    //   SKILL_*.noiseMul             — read accuracy
+    //   SKILL_*.persistentErrorRange — magnitude of whole-rally lapses
+    //   SKILL_*.overshootChance      — visible "human" key-holding
+    //
+    // All values tuned at ~60 fps. See "Frame-rate dependence" in
+    // CLAUDE.md if running on a high-refresh display.
 
     const getAiMove = (() => {
-      // A human reads continuously while the ball is in flight — initial
-      // estimate is rough, refines as the ball nears. On top of that,
-      // each rally varies: sometimes the player is sharp, sometimes their
-      // whole read of the trajectory is off and stays off the whole way.
 
       const MAX_REACTION_FRAMES = 16;   // upper bound — actual delay depends on rally profile
       const ARRIVE_TOLERANCE    = 6;

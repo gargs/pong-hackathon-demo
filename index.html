@@ -25,11 +25,45 @@
       font-size: 13px;
       letter-spacing: 0.05em;
     }
+    #difficulty {
+      margin-top: 12px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      color: rgba(255,255,255,0.4);
+      font-size: 13px;
+      letter-spacing: 0.05em;
+    }
+    #difficulty button {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.2);
+      color: rgba(255,255,255,0.6);
+      padding: 4px 12px;
+      cursor: pointer;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+    }
+    #difficulty button:hover {
+      border-color: rgba(255,255,255,0.5);
+    }
+    #difficulty button.active {
+      background: rgba(255,255,255,0.1);
+      color: white;
+      border-color: rgba(255,255,255,0.5);
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
   <div id="controls">W / S or ↑ / ↓ to move &nbsp;·&nbsp; Space to start</div>
+  <div id="difficulty">
+    Difficulty
+    <button data-level="easy">Easy</button>
+    <button data-level="medium" class="active">Medium</button>
+    <button data-level="hard">Hard</button>
+  </div>
 
   <script>
     // ─────────────────────────────────────────────────────────────────────────
@@ -66,6 +100,24 @@
     let score  = { player: 0, ai: 0 };
     let keys   = {};                              // which keys are currently held
     let phase  = 'waiting';                       // 'waiting' | 'playing' | 'over'
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AI DIFFICULTY
+    // The AI already has a per-rally skill model (lapse / default / sharp).
+    // Difficulty changes the *mix* — easy = mostly lapses, hard = mostly sharp
+    // rallies. See DIFFICULTY_DISTRIBUTIONS inside getAiMove.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    let aiDifficulty = 'medium';
+
+    document.querySelectorAll('#difficulty button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#difficulty button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        aiDifficulty = btn.dataset.level;
+        btn.blur();   // release focus so Space / arrows still work
+      });
+    });
 
     // ─────────────────────────────────────────────────────────────────────────
     // INPUT
@@ -250,15 +302,16 @@
         switchFrames:         [2, 2, 3],
         overshootChance:      0.05,
       };
-      const SKILL_DISTRIBUTION = [
-        [SKILL_LAPSE,   0.35],
-        [SKILL_DEFAULT, 0.55],
-        [SKILL_SHARP,   0.10],
-      ];
+      const DIFFICULTY_DISTRIBUTIONS = {
+        easy:   [[SKILL_LAPSE, 0.60], [SKILL_DEFAULT, 0.38], [SKILL_SHARP, 0.02]],
+        medium: [[SKILL_LAPSE, 0.35], [SKILL_DEFAULT, 0.55], [SKILL_SHARP, 0.10]],
+        hard:   [[SKILL_LAPSE, 0.10], [SKILL_DEFAULT, 0.50], [SKILL_SHARP, 0.40]],
+      };
       function sampleSkill() {
+        const dist = DIFFICULTY_DISTRIBUTIONS[aiDifficulty] || DIFFICULTY_DISTRIBUTIONS.medium;
         const r = Math.random();
         let acc = 0;
-        for (const [profile, p] of SKILL_DISTRIBUTION) {
+        for (const [profile, p] of dist) {
           acc += p;
           if (r < acc) return profile;
         }

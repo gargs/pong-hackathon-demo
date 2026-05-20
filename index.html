@@ -199,17 +199,24 @@
     //
     // ─────────────────────────────────────────────────────────────────────────
 
-    function getAiMove(gameState) {
-      const AI_DEADZONE   = 8;
-      const AI_SKIP_CHANCE = 0.30;   // fraction of frames the AI "freezes" — caps effective speed
-      if (Math.random() < AI_SKIP_CHANCE) return 0;
+    const getAiMove = (() => {
+      const REACTION_FRAMES = 12;   // ~200ms at 60fps — typical human reaction time
+      const AI_DEADZONE     = 8;
+      const ballHistory     = [];
 
-      const paddleCenter = gameState.ai.y + gameState.paddleHeight / 2;
-      const delta        = gameState.ball.y - paddleCenter;
-      if (delta < -AI_DEADZONE) return -1;
-      if (delta >  AI_DEADZONE) return  1;
-      return 0;
-    }
+      return function (gameState) {
+        ballHistory.push(gameState.ball.y);
+        if (ballHistory.length > REACTION_FRAMES) ballHistory.shift();
+
+        const perceivedBallY = ballHistory[0];   // ball as it was REACTION_FRAMES ago
+        const paddleCenter   = gameState.ai.y + gameState.paddleHeight / 2;
+        const delta          = perceivedBallY - paddleCenter;
+
+        if (delta < -AI_DEADZONE) return -1;
+        if (delta >  AI_DEADZONE) return  1;
+        return 0;
+      };
+    })();
 
     // Applies the result of getAiMove() to the AI paddle position
     function moveAi() {

@@ -200,29 +200,82 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     const getAiMove = (() => {
-      const REACTION_FRAMES  = 12;   // ~200ms at 60fps — typical human reaction time
-      const ARRIVE_TOLERANCE = 6;    // release the "key" once we're this close to target
-      const REPLAN_THRESHOLD = 25;   // only re-pick a target if the ball drifted this far from it
-      const ballHistory      = [];
-      let   targetY          = null;
+      // Humans make a small number of discrete decisions per rally — a coarse
+      // "read" right after the opponent hits, a mid-flight "adjust", and a
+      // final tweak near the paddle. Between decisions the key is held toward
+      // the current target. This block models that, with reaction delay.
+
+      const REACTION_FRAMES   = 12;     // ~200ms at 60fps — typical human reaction time
+      const ARRIVE_TOLERANCE  = 6;
+      const ADJUST_AT_X_FRAC  = 0.55;   // ball past mid-court triggers a refined read
+      const FINAL_AT_X_FRAC   = 0.80;   // ball close to AI triggers final tweak
+      const READ_NOISE_PX     = 40;     // coarse early read can be off by this much
+      const ADJUST_NOISE_PX   = 18;
+      const FINAL_NOISE_PX    = 6;
+      const TELEPORT_PX       = 50;     // detect round resets (ball jumps back to centre)
+
+      const ballHistory       = [];
+      let   prevVx            = 0;
+      let   prevPerceivedX    = null;
+      let   phase             = 'rest'; // 'rest' | 'reading' | 'adjusting' | 'final'
+      let   targetY           = null;
+
+      function predictLandingY(b, aiX) {
+        if (b.vx <= 0) return null;
+        const t = (aiX - b.x) / b.vx;
+        return b.y + b.vy * t;
+      }
+
+      function setTarget(landing, noisePx, H, paddleH) {
+        if (landing === null) return;
+        const noisy = landing + (Math.random() - 0.5) * 2 * noisePx;
+        targetY = Math.max(paddleH / 2, Math.min(H - paddleH / 2, noisy));
+      }
 
       return function (gameState) {
-        ballHistory.push(gameState.ball.y);
+        ballHistory.push({
+          x:  gameState.ball.x,
+          y:  gameState.ball.y,
+          vx: gameState.ball.vx,
+          vy: gameState.ball.vy,
+        });
         if (ballHistory.length > REACTION_FRAMES) ballHistory.shift();
 
-        const perceivedBallY = ballHistory[0];
-        const paddleCenter   = gameState.ai.y + gameState.paddleHeight / 2;
+        const perceived = ballHistory[0];
+        const W = gameState.canvasWidth;
+        const H = gameState.canvasHeight;
+        const aiX = W - 20 - PADDLE_W;
+        const paddleCenter = gameState.ai.y + gameState.paddleHeight / 2;
 
-        // Pick a fresh target if idle, or re-plan when the world has changed a lot
-        if (targetY === null || Math.abs(perceivedBallY - targetY) > REPLAN_THRESHOLD) {
-          targetY = perceivedBallY;
+        const teleported = prevPerceivedX !== null
+          && Math.abs(perceived.x - prevPerceivedX) > TELEPORT_PX;
+        const incomingStarted = (prevVx <= 0 && perceived.vx > 0)
+          || (teleported && perceived.vx > 0);
+
+        if (incomingStarted) {
+          // New incoming ball — coarse READ
+          setTarget(predictLandingY(perceived, aiX), READ_NOISE_PX, H, gameState.paddleHeight);
+          phase = 'reading';
+        } else if (perceived.vx > 0) {
+          if (phase === 'reading' && perceived.x > W * ADJUST_AT_X_FRAC) {
+            setTarget(predictLandingY(perceived, aiX), ADJUST_NOISE_PX, H, gameState.paddleHeight);
+            phase = 'adjusting';
+          } else if (phase === 'adjusting' && perceived.x > W * FINAL_AT_X_FRAC) {
+            setTarget(predictLandingY(perceived, aiX), FINAL_NOISE_PX, H, gameState.paddleHeight);
+            phase = 'final';
+          }
+        } else if (perceived.vx < 0 && phase !== 'rest') {
+          // Ball heading away — drift to ready position
+          targetY = H / 2;
+          phase = 'rest';
         }
 
+        prevVx = perceived.vx;
+        prevPerceivedX = perceived.x;
+
+        if (targetY === null) return 0;
         const delta = targetY - paddleCenter;
-        if (Math.abs(delta) <= ARRIVE_TOLERANCE) {
-          targetY = null;            // arrived — release the key
-          return 0;
-        }
+        if (Math.abs(delta) <= ARRIVE_TOLERANCE) return 0;
         return delta < 0 ? -1 : 1;
       };
     })();

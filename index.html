@@ -200,21 +200,30 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     const getAiMove = (() => {
-      const REACTION_FRAMES = 12;   // ~200ms at 60fps — typical human reaction time
-      const AI_DEADZONE     = 8;
-      const ballHistory     = [];
+      const REACTION_FRAMES  = 12;   // ~200ms at 60fps — typical human reaction time
+      const ARRIVE_TOLERANCE = 6;    // release the "key" once we're this close to target
+      const REPLAN_THRESHOLD = 25;   // only re-pick a target if the ball drifted this far from it
+      const ballHistory      = [];
+      let   targetY          = null;
 
       return function (gameState) {
         ballHistory.push(gameState.ball.y);
         if (ballHistory.length > REACTION_FRAMES) ballHistory.shift();
 
-        const perceivedBallY = ballHistory[0];   // ball as it was REACTION_FRAMES ago
+        const perceivedBallY = ballHistory[0];
         const paddleCenter   = gameState.ai.y + gameState.paddleHeight / 2;
-        const delta          = perceivedBallY - paddleCenter;
 
-        if (delta < -AI_DEADZONE) return -1;
-        if (delta >  AI_DEADZONE) return  1;
-        return 0;
+        // Pick a fresh target if idle, or re-plan when the world has changed a lot
+        if (targetY === null || Math.abs(perceivedBallY - targetY) > REPLAN_THRESHOLD) {
+          targetY = perceivedBallY;
+        }
+
+        const delta = targetY - paddleCenter;
+        if (Math.abs(delta) <= ARRIVE_TOLERANCE) {
+          targetY = null;            // arrived — release the key
+          return 0;
+        }
+        return delta < 0 ? -1 : 1;
       };
     })();
 

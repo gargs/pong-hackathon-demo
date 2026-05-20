@@ -229,6 +229,28 @@
     // just keydown. Listen on the document so any click on the page works.
     document.addEventListener('pointerdown', unlockAudio, { passive: true });
 
+    // Touch input — drag anywhere on the canvas to move the paddle, tap to
+    // start a round or play again. Coordinates are translated from CSS-
+    // pixels to the canvas's internal 800x600 space.
+    function applyTouch(touch) {
+      const rect = canvas.getBoundingClientRect();
+      const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+      player.y = Math.max(0, Math.min(H - PADDLE_H, y - PADDLE_H / 2));
+    }
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      unlockAudio();
+      if (e.touches.length === 0) return;
+      if (phase === 'waiting') startRound();
+      else if (phase === 'over') resetGame();
+      applyTouch(e.touches[0]);
+    }, { passive: false });
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (e.touches.length === 0) return;
+      applyTouch(e.touches[0]);
+    }, { passive: false });
+
     // ─────────────────────────────────────────────────────────────────────────
     // ROUND / GAME MANAGEMENT
     // ─────────────────────────────────────────────────────────────────────────

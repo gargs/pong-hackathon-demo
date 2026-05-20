@@ -200,7 +200,10 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     function getAiMove(gameState) {
-      const AI_DEADZONE  = 8;
+      const AI_DEADZONE   = 8;
+      const AI_SKIP_CHANCE = 0.30;   // fraction of frames the AI "freezes" — caps effective speed
+      if (Math.random() < AI_SKIP_CHANCE) return 0;
+
       const paddleCenter = gameState.ai.y + gameState.paddleHeight / 2;
       const delta        = gameState.ball.y - paddleCenter;
       if (delta < -AI_DEADZONE) return -1;

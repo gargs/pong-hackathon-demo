@@ -120,10 +120,60 @@
     });
 
     // ─────────────────────────────────────────────────────────────────────────
+    // AUDIO
+    // Tones synthesized via Web Audio API — no files, no deps. The context
+    // is created and resumed on first user keypress (browsers block audio
+    // until a user gesture).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (!Ctor) return null;
+        audioCtx = new Ctor();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+    function blip(freq, duration = 0.06, type = 'square', volume = 0.12) {
+      const ctx = getAudio();
+      if (!ctx) return;
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration);
+    }
+    function chirp(startFreq, endFreq, duration = 0.22, volume = 0.16) {
+      const ctx = getAudio();
+      if (!ctx) return;
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(startFreq, t0);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, t0 + duration);
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(volume, t0 + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // INPUT
     // ─────────────────────────────────────────────────────────────────────────
 
     document.addEventListener('keydown', e => {
+      getAudio();   // resume audio on the first user gesture
       keys[e.key] = true;
       if (e.key === ' ' || e.key === 'Enter') {
         if (phase === 'waiting') startRound();
@@ -181,10 +231,12 @@
       if (ball.y - BALL_R < 0) {
         ball.y  = BALL_R;
         ball.vy = Math.abs(ball.vy);
+        blip(220, 0.04, 'triangle', 0.08);
       }
       if (ball.y + BALL_R > H) {
         ball.y  = H - BALL_R;
         ball.vy = -Math.abs(ball.vy);
+        blip(220, 0.04, 'triangle', 0.08);
       }
 
       // Player paddle is on the left at x = 20
@@ -197,6 +249,7 @@
         ball.x  = playerX + PADDLE_W + BALL_R;
         ball.vx = Math.abs(ball.vx) * 1.04;            // small speed increase each hit
         ball.vy = ((ball.y - (player.y + PADDLE_H / 2)) / (PADDLE_H / 2)) * 6;
+        blip(660);
       }
 
       // AI paddle is on the right at x = W - 20 - PADDLE_W
@@ -209,15 +262,18 @@
         ball.x  = aiX - BALL_R;
         ball.vx = -Math.abs(ball.vx) * 1.04;
         ball.vy = ((ball.y - (ai.y + PADDLE_H / 2)) / (PADDLE_H / 2)) * 6;
+        blip(440);
       }
 
       // Ball left the screen — award a point
       if (ball.x < -BALL_R) {
         score.ai++;
+        chirp(440, 220);
         phase = score.ai >= WINNING_SCORE ? 'over' : 'waiting';
       }
       if (ball.x > W + BALL_R) {
         score.player++;
+        chirp(440, 880);
         phase = score.player >= WINNING_SCORE ? 'over' : 'waiting';
       }
     }

@@ -103,6 +103,7 @@ reverted without breaking the rest.
 | `docs/assignment.md` | Original hackathon challenge brief |
 | `docs/preflight.md` | What to set up before a hackathon session |
 | `docs/code-review.md` | Snapshot review and open recommendations (2026-05-20) |
+| `docs/session-summary.md` | Debrief-ready summary of how we approached the problem (2026-05-20) |
 | `system-prompt.md` | Coaching prompt Claude uses during the session |
 
 ## Built with

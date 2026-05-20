@@ -201,22 +201,69 @@
 
     const getAiMove = (() => {
       // A human reads continuously while the ball is in flight — initial
-      // estimate is rough, refines as the ball nears. We model this with one
-      // initial read followed by frequent micro-reads whose noise decays as
-      // the ball approaches the AI's side.
+      // estimate is rough, refines as the ball nears. On top of that,
+      // each rally varies: sometimes the player is sharp, sometimes their
+      // whole read of the trajectory is off and stays off the whole way.
 
-      const REACTION_FRAMES     = 8;    // ~130ms — alert human reaction
+      const MAX_REACTION_FRAMES = 16;   // upper bound — actual delay depends on rally profile
       const ARRIVE_TOLERANCE    = 6;
       const REREAD_EVERY        = 6;    // re-evaluate every ~100ms during flight or recovery
       const REPLAN_THRESHOLD    = 14;   // only commit to a new target if estimate moved meaningfully
-      const READ_NOISE_START    = 32;   // estimate error right after the opponent hits
-      const READ_NOISE_END      = 4;    // estimate error when the ball is about to arrive
-      const ANTICIPATE_NOISE       = 30;   // uncertainty when guessing the opponent's return
-      const ANTICIPATE_COMMITMENT  = 0.4;  // 0 = stay at centre, 1 = fully commit to prediction
-      const TELEPORT_PX         = 50;   // detect round resets
-      const DIR_SWITCH_FRAMES   = [3, 4, 5];   // ~50-85ms pause when reversing direction
-      const OVERSHOOT_CHANCE    = 0.20; // probability of holding one extra frame past target
-      const OVERSHOOT_FRAMES    = [1, 2];      // how long we overshoot when it happens
+      const READ_NOISE_START    = 32;
+      const READ_NOISE_END      = 4;
+      const ANTICIPATE_NOISE       = 30;
+      const ANTICIPATE_COMMITMENT  = 0.4;
+      const TELEPORT_PX         = 50;
+      const OVERSHOOT_FRAMES    = [1, 2];
+
+      // Per-rally skill profiles. Sampled at the start of each rally to model
+      // the natural variance in a human player — bad reads, average reads,
+      // and the occasional flash of brilliance.
+      //
+      // persistentErrorRange is the magnitude of a y-error that lasts the
+      // whole rally — micro-reads only shrink it slightly, so a lapse stays
+      // a lapse all the way through.
+      const SKILL_LAPSE = {
+        name: 'lapse',
+        reactionFrames:       14,
+        noiseMul:             1.5,
+        persistentErrorRange: 80,
+        commitmentMul:        0.4,
+        switchFrames:         [5, 6, 8],
+        overshootChance:      0.45,
+      };
+      const SKILL_DEFAULT = {
+        name: 'default',
+        reactionFrames:       9,
+        noiseMul:             1.0,
+        persistentErrorRange: 30,
+        commitmentMul:        1.0,
+        switchFrames:         [3, 4, 5],
+        overshootChance:      0.20,
+      };
+      const SKILL_SHARP = {
+        name: 'sharp',
+        reactionFrames:       4,
+        noiseMul:             0.3,
+        persistentErrorRange: 3,
+        commitmentMul:        1.3,
+        switchFrames:         [2, 2, 3],
+        overshootChance:      0.05,
+      };
+      const SKILL_DISTRIBUTION = [
+        [SKILL_LAPSE,   0.35],
+        [SKILL_DEFAULT, 0.55],
+        [SKILL_SHARP,   0.10],
+      ];
+      function sampleSkill() {
+        const r = Math.random();
+        let acc = 0;
+        for (const [profile, p] of SKILL_DISTRIBUTION) {
+          acc += p;
+          if (r < acc) return profile;
+        }
+        return SKILL_DEFAULT;
+      }
 
       const ballHistory       = [];
       let   prevVx            = 0;
@@ -224,9 +271,11 @@
       let   phase             = 'rest'; // 'rest' | 'flying'
       let   targetY           = null;
       let   rereadCounter     = 0;
-      let   lastDir           = 0;     // direction returned last frame, for motor modelling
-      let   stutterRemaining  = 0;     // frames left in a direction-switch pause
-      let   overshootRemaining = 0;    // frames left of holding past the target
+      let   lastDir           = 0;
+      let   stutterRemaining  = 0;
+      let   overshootRemaining = 0;
+      let   rallyProfile      = sampleSkill();
+      let   rallyError        = (Math.random() - 0.5) * 2 * rallyProfile.persistentErrorRange;
 
       function predictLandingY(b, aiX) {
         if (b.vx <= 0) return null;
@@ -241,7 +290,9 @@
       }
 
       function noisyTarget(landing, noisePx, paddleH, H) {
-        const noisy = landing + (Math.random() - 0.5) * 2 * noisePx;
+        // rallyError is a persistent y-bias for the current rally — closure-scoped.
+        const biased = landing + rallyError;
+        const noisy  = biased + (Math.random() - 0.5) * 2 * noisePx;
         return Math.max(paddleH / 2, Math.min(H - paddleH / 2, noisy));
       }
 
@@ -252,9 +303,10 @@
           vx: gameState.ball.vx,
           vy: gameState.ball.vy,
         });
-        if (ballHistory.length > REACTION_FRAMES) ballHistory.shift();
+        if (ballHistory.length > MAX_REACTION_FRAMES) ballHistory.shift();
 
-        const perceived = ballHistory[0];
+        const reactionIdx = Math.max(0, ballHistory.length - 1 - rallyProfile.reactionFrames);
+        const perceived = ballHistory[reactionIdx];
         const W = gameState.canvasWidth;
         const H = gameState.canvasHeight;
         const aiX = W - 20 - PADDLE_W;
@@ -267,9 +319,14 @@
           || (teleported && perceived.vx > 0);
 
         if (incomingStarted) {
+          // New rally on round reset — sample a fresh skill profile and error
+          if (teleported) {
+            rallyProfile = sampleSkill();
+            rallyError   = (Math.random() - 0.5) * 2 * rallyProfile.persistentErrorRange;
+          }
           const landing = predictLandingY(perceived, aiX);
           if (landing !== null) {
-            targetY = noisyTarget(landing, READ_NOISE_START, paddleH, H);
+            targetY = noisyTarget(landing, READ_NOISE_START * rallyProfile.noiseMul, paddleH, H);
           }
           phase = 'flying';
           rereadCounter = 0;
@@ -280,17 +337,14 @@
             const landing = predictLandingY(perceived, aiX);
             if (landing !== null) {
               const progress = flightProgress(perceived.x, W);
-              const noise    = READ_NOISE_START + (READ_NOISE_END - READ_NOISE_START) * progress;
-              const candidate = noisyTarget(landing, noise, paddleH, H);
+              const baseNoise = READ_NOISE_START + (READ_NOISE_END - READ_NOISE_START) * progress;
+              const candidate = noisyTarget(landing, baseNoise * rallyProfile.noiseMul, paddleH, H);
               if (targetY === null || Math.abs(candidate - targetY) > REPLAN_THRESHOLD) {
                 targetY = candidate;
               }
             }
           }
         } else if (perceived.vx < 0) {
-          // Ball heading toward the player — anticipate the return.
-          // Shadow the predicted contact y, which is roughly where a centered
-          // return will come back to. Refines as the ball nears the player.
           if (phase !== 'rest') {
             phase = 'rest';
             rereadCounter = 0;
@@ -303,8 +357,9 @@
             if (perceived.x > playerX) {
               const t = (playerX - perceived.x) / perceived.vx;
               const predictedContactY = perceived.y + perceived.vy * t;
-              const blended = H / 2 + ANTICIPATE_COMMITMENT * (predictedContactY - H / 2);
-              candidate = noisyTarget(blended, ANTICIPATE_NOISE, paddleH, H);
+              const commitment = ANTICIPATE_COMMITMENT * rallyProfile.commitmentMul;
+              const blended = H / 2 + commitment * (predictedContactY - H / 2);
+              candidate = noisyTarget(blended, ANTICIPATE_NOISE * rallyProfile.noiseMul, paddleH, H);
             }
             if (targetY === null || Math.abs(candidate - targetY) > REPLAN_THRESHOLD) {
               targetY = candidate;
@@ -332,12 +387,13 @@
           overshootRemaining--;
           return lastDir;
         }
-        if (lastDir !== 0 && desiredDir === 0 && Math.random() < OVERSHOOT_CHANCE) {
+        if (lastDir !== 0 && desiredDir === 0 && Math.random() < rallyProfile.overshootChance) {
           overshootRemaining = OVERSHOOT_FRAMES[Math.floor(Math.random() * OVERSHOOT_FRAMES.length)];
           return lastDir;
         }
         if (lastDir !== 0 && desiredDir !== 0 && desiredDir !== lastDir) {
-          stutterRemaining = DIR_SWITCH_FRAMES[Math.floor(Math.random() * DIR_SWITCH_FRAMES.length)];
+          const sf = rallyProfile.switchFrames;
+          stutterRemaining = sf[Math.floor(Math.random() * sf.length)];
           lastDir = 0;
           return 0;
         }

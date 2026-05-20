@@ -131,53 +131,62 @@
 
     // ─────────────────────────────────────────────────────────────────────────
     // AUDIO
-    // Tones synthesized via Web Audio API — no files, no deps. The context
-    // is created and resumed on first user keypress (browsers block audio
-    // until a user gesture).
+    // Tones synthesized via Web Audio API — no files, no deps.
+    // Safari blocks Web Audio more strictly than Chrome: even after
+    // ctx.resume() the first sounds are silently swallowed unless we
+    // play a silent buffer source from inside a real user gesture.
+    // unlockAudio() does that; until it runs (called from keydown/click),
+    // blip()/chirp() are no-ops.
     // ─────────────────────────────────────────────────────────────────────────
 
-    let audioCtx = null;
-    function getAudio() {
+    let audioCtx       = null;
+    let audioUnlocked  = false;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
       if (!audioCtx) {
         const Ctor = window.AudioContext || window.webkitAudioContext;
-        if (!Ctor) return null;
+        if (!Ctor) return;
         audioCtx = new Ctor();
       }
       if (audioCtx.state === 'suspended') audioCtx.resume();
-      return audioCtx;
+      // Silent buffer source — the "unlock" trick that satisfies Safari.
+      const buf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+      audioUnlocked = true;
     }
+
     function blip(freq, duration = 0.06, type = 'square', volume = 0.12) {
-      if (muted) return;
-      const ctx = getAudio();
-      if (!ctx) return;
-      const t0 = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      if (muted || !audioUnlocked || !audioCtx) return;
+      const t0   = audioCtx.currentTime;
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
       osc.type = type;
       osc.frequency.setValueAtTime(freq, t0);
-      gain.gain.setValueAtTime(0, t0);
-      gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-      osc.connect(gain).connect(ctx.destination);
+      // Single-decay envelope — simpler and more reliable than attack+decay on Safari
+      gain.gain.setValueAtTime(volume, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+      osc.connect(gain).connect(audioCtx.destination);
       osc.start(t0);
-      osc.stop(t0 + duration);
+      osc.stop(t0 + duration + 0.02);
     }
+
     function chirp(startFreq, endFreq, duration = 0.22, volume = 0.16) {
-      if (muted) return;
-      const ctx = getAudio();
-      if (!ctx) return;
-      const t0 = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      if (muted || !audioUnlocked || !audioCtx) return;
+      const t0   = audioCtx.currentTime;
+      const osc  = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(startFreq, t0);
       osc.frequency.exponentialRampToValueAtTime(endFreq, t0 + duration);
-      gain.gain.setValueAtTime(0, t0);
-      gain.gain.linearRampToValueAtTime(volume, t0 + 0.008);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-      osc.connect(gain).connect(ctx.destination);
+      gain.gain.setValueAtTime(volume, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+      osc.connect(gain).connect(audioCtx.destination);
       osc.start(t0);
-      osc.stop(t0 + duration);
+      osc.stop(t0 + duration + 0.02);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -190,7 +199,7 @@
     }
 
     document.addEventListener('keydown', e => {
-      getAudio();   // resume audio on the first user gesture
+      unlockAudio();   // safe to call on every keypress; only does work once
       keys[e.key] = true;
       if (e.key === ' ' || e.key === 'Enter') {
         if (phase === 'waiting') startRound();
@@ -206,6 +215,9 @@
       }
     });
     document.addEventListener('keyup', e => { keys[e.key] = false; });
+    // Safari is happiest unlocking audio on an actual pointer event, not
+    // just keydown. Listen on the document so any click on the page works.
+    document.addEventListener('pointerdown', unlockAudio, { passive: true });
 
     // ─────────────────────────────────────────────────────────────────────────
     // ROUND / GAME MANAGEMENT
